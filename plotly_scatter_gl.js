@@ -12,20 +12,35 @@
   //   Color → optional third measure or any dimension
   //
   // Override any field via the viz config panel.
+  //
+  // IMPORTANT — Plotly dependency:
+  // Do NOT load Plotly dynamically from within this file (CORS / CSP risk).
+  // Instead, register the Plotly CDN URL in the Looker Admin viz Dependencies
+  // field so Looker pre-loads it in its own context:
+  //   https://cdn.plot.ly/plotly-2.27.0.min.js
   // ---------------------------------------------------------------------------
 
-  var PLOTLY_CDN = "https://cdn.plot.ly/plotly-2.27.0.min.js";
-
   function loadPlotly(callback) {
+    // Plotly should already be present via the Looker Dependencies field.
+    // This fallback handles local dev / test environments only.
     if (window.Plotly) {
       callback();
       return;
     }
+    console.warn(
+      "[plotly_scatter_gl] Plotly not found on window. " +
+      "Add https://cdn.plot.ly/plotly-2.27.0.min.js to the " +
+      "Dependencies field in Admin → Platform → Visualizations."
+    );
+    // Attempt dynamic load as last resort (may be blocked by Looker CSP)
     var script = document.createElement("script");
-    script.src = PLOTLY_CDN;
+    script.src = "https://cdn.plot.ly/plotly-2.27.0.min.js";
     script.onload = callback;
     script.onerror = function () {
-      console.error("Plotly: failed to load from CDN.");
+      console.error(
+        "[plotly_scatter_gl] Failed to load Plotly. " +
+        "Configure the Dependencies field in Looker Admin to resolve this."
+      );
     };
     document.head.appendChild(script);
   }

@@ -50,7 +50,40 @@ Requires Looker Admin access.
    | Label  | `Plotly Scatter (High Performance)`            |
    | Main   | *(your hosted URL from Step 1)*                |
 
-4. Click **Save**. No restart required.
+4. In the **Dependencies** field add:
+   ```
+   https://cdn.plot.ly/plotly-2.27.0.min.js
+   ```
+5. Click **Save**. No restart required.
+
+> **Why Dependencies instead of dynamic loading?** Looker's custom viz iframe
+> runs under a Content Security Policy that may block dynamically injected
+> scripts from external domains. Registering Plotly in the Dependencies field
+> lets Looker load it in its own context, bypassing that restriction entirely.
+
+---
+
+## CORS configuration (GCS hosting only)
+
+GitHub raw and jsDelivr serve `Access-Control-Allow-Origin: *` automatically —
+no action needed. If you host on a GCS bucket you must add CORS headers manually.
+
+Create `cors.json`:
+```json
+[
+  {
+    "origin": ["*"],
+    "method": ["GET"],
+    "responseHeader": ["Content-Type"],
+    "maxAgeSeconds": 3600
+  }
+]
+```
+
+Apply it:
+```bash
+gcloud storage buckets update gs://YOUR_BUCKET --cors-file=cors.json
+```
 
 ---
 
