@@ -8,8 +8,10 @@
   //   - Each measure rendered as lines, scatter (WebGL), or lines+points
   //   - Categorical plot bands — colored background regions defined by
   //     a start timestamp, end timestamp, and a category field
+  //   - Band categories are TOGGLEABLE via legend click — click to hide/show,
+  //     dimmed legend entry indicates hidden state
   //   - Optional dual Y axis (first measure left, all others right)
-  //   - Consistent color palette across traces and band legend entries
+  //   - Toggle state persists across config changes; resets on new data
   //
   // Field mapping:
   //   X        → time dimension (first dimension by default)
@@ -70,33 +72,29 @@
     return row[name] && row[name].value !== undefined ? row[name].value : null;
   }
 
-  // Parse a comma-separated config string into a trimmed array
   function parseList(str) {
     if (!str || !str.trim()) return [];
     return str.split(",").map(function (s) { return s.trim(); }).filter(Boolean);
   }
 
-  // Assign each unique category a band color, return { category: rgbaBase }
+  // Assign each unique category a palette color; return { category: rgbaBase }
   function buildColorMap(categories) {
-    var map = {};
-    var idx = 0;
+    var map = {}, idx = 0;
     categories.forEach(function (cat) {
       if (!map.hasOwnProperty(cat)) {
-        map[cat] = BAND_PALETTE[idx % BAND_PALETTE.length];
-        idx++;
+        map[cat] = BAND_PALETTE[idx++ % BAND_PALETTE.length];
       }
     });
     return map;
   }
 
-  // Deduplicate band definitions from the data rows
+  // Deduplicate band definitions from data rows
   function extractBands(data, startF, endF, catF) {
-    var seen = {};
-    var bands = [];
+    var seen = {}, bands = [];
     data.forEach(function (row) {
-      var s = safeVal(row, startF);
-      var e = safeVal(row, endF);
-      var c = safeVal(row, catF);
+      var s = safeVal(row, startF),
+          e = safeVal(row, endF),
+          c = safeVal(row, catF);
       if (s === null || e === null || c === null) return;
       var key = s + "\x00" + e + "\x00" + c;
       if (!seen[key]) {
@@ -105,6 +103,13 @@
       }
     });
     return bands;
+  }
+
+  // Build shape objects for all bands, optionally filtering by active state
+  function buildShapes(allBandShapes, activeCats) {
+    return allBandShapes
+      .filter(function (bs) { return activeCats[bs.category] !== false; })
+      .map(function (bs) { return bs.shape; });
   }
 
   // ---------------------------------------------------------------------------
@@ -269,6 +274,18 @@
       this._container.style.cssText = "width:100%;height:100%;min-height:200px;";
       element.style.overflow = "hidden";
       element.appendChild(this._container);
+
+      // Persistent band toggle state — survives config-only re-renders
+      // _activeCats:      { category: bool }   — true = visible
+      // _catSetKey:       string               — fingerprint to detect new data
+      // _allBandShapes:   [{ category, shape }] — full shape list for rebuild
+      // _bandColorMap:    { category: rgbaBase }
+      // _bandCatTraceIdx: { category: traceIdx } — for restyle calls
+      this._activeCats      = {};
+      this._catSetKey       = null;
+      this._allBandShapes   = [];
+      this._bandColorMap    = {};
+      this._bandCatTraceIdx = {};
     },
 
     updateAsync: function (data, element, config, queryResponse, details, done) {
@@ -276,9 +293,9 @@
 
       loadPlotly(function () {
         try {
-          var dims    = queryResponse.fields.dimensions || [];
-          var meas    = queryResponse.fields.measures   || [];
-          var allF    = dims.concat(meas);
+          var dims = queryResponse.fields.dimensions || [];
+          var meas = queryResponse.fields.measures   || [];
+          var allF = dims.concat(meas);
 
           if (allF.length < 1) {
             self._err(element, "Add at least one field to use this visualization.");
@@ -296,16 +313,16 @@
             measNames = meas.map(function (f) { return f.name; });
           }
 
-          var bandStart = (config.band_start_field  || "").trim() || null;
-          var bandEnd   = (config.band_end_field    || "").trim() || null;
+          var bandStart = (config.band_start_field    || "").trim() || null;
+          var bandEnd   = (config.band_end_field      || "").trim() || null;
           var bandCat   = (config.band_category_field || "").trim() || null;
           var hasBands  = !!(bandStart && bandEnd && bandCat);
 
           var traceType  = config.trace_type  || "lines";
           var useWebGL   = traceType === "markers";
           var dualAxis   = !!(config.use_dual_axis && measNames.length > 1);
-          var lineWidth  = config.line_width  != null ? config.line_width  : 2;
-          var pointSize  = config.point_size  != null ? config.point_size  : 4;
+          var lineWidth  = config.line_width   != null ? config.line_width   : 2;
+          var pointSize  = config.point_size   != null ? config.point_size   : 4;
           var lineOp     = config.line_opacity != null ? config.line_opacity : 1.0;
           var bandOp     = config.band_opacity != null ? config.band_opacity : 0.18;
           var showBorder = !!config.band_border;
@@ -364,18 +381,34 @@
           });
 
           // ----------------------------------------------------------------
-          // Build plot band shapes + legend dummy traces
+          // Process plot bands
           // ----------------------------------------------------------------
           var shapes = [];
+          self._allBandShapes   = [];
+          self._bandColorMap    = {};
+          self._bandCatTraceIdx = {};
 
           if (hasBands) {
             var bands    = extractBands(data, bandStart, bandEnd, bandCat);
             var cats     = bands.map(function (b) { return b.category; });
             var colorMap = buildColorMap(cats);
+            self._bandColorMap = colorMap;
 
+            // ---- Reset toggle state only when category set changes ----
+            // This preserves user's toggle choices across config-only re-renders
+            var newCatKey = Object.keys(colorMap).sort().join("\x00");
+            if (self._catSetKey !== newCatKey) {
+              self._activeCats = {};
+              Object.keys(colorMap).forEach(function (cat) {
+                self._activeCats[cat] = true;
+              });
+              self._catSetKey = newCatKey;
+            }
+
+            // ---- Build full shape list (all bands, all categories) ----
             bands.forEach(function (band) {
-              var rgba = colorMap[band.category];
-              shapes.push({
+              var rgba  = colorMap[band.category];
+              var shape = {
                 type:      "rect",
                 xref:      "x",
                 yref:      "paper",
@@ -389,19 +422,31 @@
                   color: showBorder ? rgba + "0.6)" : "transparent",
                 },
                 layer: "below",
-              });
+              };
+              self._allBandShapes.push({ category: band.category, shape: shape });
             });
 
-            // Invisible scatter traces so band categories appear in the legend
+            // Only render shapes for currently active categories
+            shapes = buildShapes(self._allBandShapes, self._activeCats);
+
+            // ---- Band legend dummy traces ----
+            // Track trace indices so restyle calls know which trace to update
             Object.keys(colorMap).forEach(function (cat) {
-              var rgba = colorMap[cat];
+              var isActive = self._activeCats[cat] !== false;
+              var rgba     = colorMap[cat];
+              self._bandCatTraceIdx[cat] = traces.length;
               traces.push({
                 type: "scatter",
                 mode: "markers",
                 name: cat,
                 x: [null],
                 y: [null],
-                marker: { color: rgba + "0.75)", size: 12, symbol: "square" },
+                marker: {
+                  // Active: solid square; inactive: faded with strikethrough feel
+                  color:   rgba + (isActive ? "0.75)" : "0.2)"),
+                  size:    12,
+                  symbol:  isActive ? "square" : "square-open",
+                },
                 showlegend: true,
                 hoverinfo: "skip",
               });
@@ -413,7 +458,6 @@
           // ----------------------------------------------------------------
           var xMeta = allF.find(function (f) { return f.name === xField; });
 
-          // Auto Y-axis label: use measure name if exactly one measure
           var autoYLabel = "";
           if (measNames.length === 1) {
             var ym = allF.find(function (f) { return f.name === measNames[0]; });
@@ -489,6 +533,94 @@
           };
 
           Plotly.react(self._container, traces, layout, plotCfg);
+
+          // ----------------------------------------------------------------
+          // Legend click — intercept clicks on band category entries
+          //
+          // Plotly's default legendclick shows/hides the *trace* itself.
+          // Band categories are backed by invisible dummy traces — we don't
+          // want to hide those. Instead we toggle the corresponding shapes.
+          //
+          // Returning false from the handler prevents Plotly's default action.
+          // ----------------------------------------------------------------
+
+          // Remove any previous listener to avoid stacking handlers
+          self._container.removeAllListeners("plotly_legendclick");
+          self._container.removeAllListeners("plotly_legenddoubleclick");
+
+          self._container.on("plotly_legendclick", function (eventData) {
+            var clickedName = eventData.trace.name;
+
+            // Not a band category — let Plotly handle normally
+            if (!self._bandCatTraceIdx.hasOwnProperty(clickedName)) {
+              return; // default behavior
+            }
+
+            // Toggle active state
+            self._activeCats[clickedName] = !self._activeCats[clickedName];
+            var isNowActive = self._activeCats[clickedName];
+            var rgba        = self._bandColorMap[clickedName];
+            var traceIdx    = self._bandCatTraceIdx[clickedName];
+
+            // Rebuild and apply the filtered shapes
+            Plotly.relayout(self._container, {
+              shapes: buildShapes(self._allBandShapes, self._activeCats),
+            });
+
+            // Update the dummy trace marker to reflect on/off state visually
+            Plotly.restyle(self._container, {
+              "marker.color":  [rgba + (isNowActive ? "0.75)" : "0.2)")],
+              "marker.symbol": [isNowActive ? "square" : "square-open"],
+            }, [traceIdx]);
+
+            return false; // Prevent Plotly's default trace hide/show
+          });
+
+          // Double-click on a band legend entry: make it the only visible band
+          // (mirrors Plotly's standard isolate behavior for regular traces)
+          self._container.on("plotly_legenddoubleclick", function (eventData) {
+            var clickedName = eventData.trace.name;
+
+            if (!self._bandCatTraceIdx.hasOwnProperty(clickedName)) {
+              return; // default behavior for measure traces
+            }
+
+            // Check if this category is already isolated (all others off)
+            var allCats      = Object.keys(self._activeCats);
+            var alreadySolo  = allCats.every(function (cat) {
+              return cat === clickedName
+                ? self._activeCats[cat] !== false
+                : self._activeCats[cat] === false;
+            });
+
+            if (alreadySolo) {
+              // Second double-click: restore all
+              allCats.forEach(function (cat) { self._activeCats[cat] = true; });
+            } else {
+              // Isolate: only this category visible
+              allCats.forEach(function (cat) {
+                self._activeCats[cat] = (cat === clickedName);
+              });
+            }
+
+            // Rebuild shapes
+            Plotly.relayout(self._container, {
+              shapes: buildShapes(self._allBandShapes, self._activeCats),
+            });
+
+            // Update all dummy trace markers
+            allCats.forEach(function (cat) {
+              var isActive = self._activeCats[cat];
+              var traceIdx = self._bandCatTraceIdx[cat];
+              var rgba     = self._bandColorMap[cat];
+              Plotly.restyle(self._container, {
+                "marker.color":  [rgba + (isActive ? "0.75)" : "0.2)")],
+                "marker.symbol": [isActive ? "square" : "square-open"],
+              }, [traceIdx]);
+            });
+
+            return false;
+          });
 
         } catch (err) {
           self._err(element, "Visualization error: " + err.message);
