@@ -1,0 +1,510 @@
+(function () {
+  // ---------------------------------------------------------------------------
+  // Plotly Time Series + Plot Bands
+  // Looker Custom Visualization
+  //
+  // Features:
+  //   - Multiple continuous measures on a shared time-series X axis
+  //   - Each measure rendered as lines, scatter (WebGL), or lines+points
+  //   - Categorical plot bands — colored background regions defined by
+  //     a start timestamp, end timestamp, and a category field
+  //   - Optional dual Y axis (first measure left, all others right)
+  //   - Consistent color palette across traces and band legend entries
+  //
+  // Field mapping:
+  //   X        → time dimension (first dimension by default)
+  //   Measures → all measures by default; override with comma-separated list
+  //   Bands    → requires three fields: start_ts, end_ts, category
+  //
+  // IMPORTANT — Plotly dependency:
+  //   Register the Plotly CDN URL in the Looker Admin viz Dependencies field:
+  //   https://cdn.plot.ly/plotly-2.27.0.min.js
+  // ---------------------------------------------------------------------------
+
+  // Palette for plot bands — rgba base strings (opacity appended at runtime)
+  var BAND_PALETTE = [
+    "rgba(99,102,241,",   // indigo
+    "rgba(249,115,22,",   // orange
+    "rgba(20,184,166,",   // teal
+    "rgba(244,63,94,",    // rose
+    "rgba(234,179,8,",    // amber
+    "rgba(168,85,247,",   // purple
+    "rgba(34,197,94,",    // green
+    "rgba(14,165,233,",   // sky
+    "rgba(236,72,153,",   // pink
+    "rgba(132,204,22,",   // lime
+  ];
+
+  // Solid palette for measure traces
+  var LINE_PALETTE = [
+    "#6366f1", "#f97316", "#14b8a6", "#f43f5e",
+    "#eab308", "#a855f7", "#22c55e", "#0ea5e9",
+    "#ec4899", "#84cc16",
+  ];
+
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
+
+  function loadPlotly(callback) {
+    if (window.Plotly) { callback(); return; }
+    console.warn(
+      "[plotly_timeseries_bands] Plotly not found on window. " +
+      "Add https://cdn.plot.ly/plotly-2.27.0.min.js to the " +
+      "Dependencies field in Admin → Platform → Visualizations."
+    );
+    var s = document.createElement("script");
+    s.src = "https://cdn.plot.ly/plotly-2.27.0.min.js";
+    s.onload = callback;
+    s.onerror = function () {
+      console.error("[plotly_timeseries_bands] Failed to load Plotly.");
+    };
+    document.head.appendChild(s);
+  }
+
+  function fieldLabel(field) {
+    return field.label_short || field.label || field.name;
+  }
+
+  function safeVal(row, name) {
+    return row[name] && row[name].value !== undefined ? row[name].value : null;
+  }
+
+  // Parse a comma-separated config string into a trimmed array
+  function parseList(str) {
+    if (!str || !str.trim()) return [];
+    return str.split(",").map(function (s) { return s.trim(); }).filter(Boolean);
+  }
+
+  // Assign each unique category a band color, return { category: rgbaBase }
+  function buildColorMap(categories) {
+    var map = {};
+    var idx = 0;
+    categories.forEach(function (cat) {
+      if (!map.hasOwnProperty(cat)) {
+        map[cat] = BAND_PALETTE[idx % BAND_PALETTE.length];
+        idx++;
+      }
+    });
+    return map;
+  }
+
+  // Deduplicate band definitions from the data rows
+  function extractBands(data, startF, endF, catF) {
+    var seen = {};
+    var bands = [];
+    data.forEach(function (row) {
+      var s = safeVal(row, startF);
+      var e = safeVal(row, endF);
+      var c = safeVal(row, catF);
+      if (s === null || e === null || c === null) return;
+      var key = s + "\x00" + e + "\x00" + c;
+      if (!seen[key]) {
+        seen[key] = true;
+        bands.push({ start: s, end: e, category: String(c) });
+      }
+    });
+    return bands;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Visualization registration
+  // ---------------------------------------------------------------------------
+
+  looker.plugins.visualizations.add({
+    id: "plotly_timeseries_bands",
+    label: "Plotly Time Series + Plot Bands",
+
+    options: {
+      // ---- Field mapping ----
+      x_field: {
+        type: "string",
+        label: "X (Time) Field",
+        display: "text",
+        default: "",
+        placeholder: "e.g. events.timestamp",
+        section: "Field Mapping",
+        order: 1,
+      },
+      measure_fields: {
+        type: "string",
+        label: "Measure Fields (comma-separated; blank = all measures)",
+        display: "text",
+        default: "",
+        placeholder: "e.g. events.power_kw, events.temp_f",
+        section: "Field Mapping",
+        order: 2,
+      },
+      band_start_field: {
+        type: "string",
+        label: "Plot Band — Start Timestamp Field",
+        display: "text",
+        default: "",
+        placeholder: "e.g. events.period_start",
+        section: "Field Mapping",
+        order: 3,
+      },
+      band_end_field: {
+        type: "string",
+        label: "Plot Band — End Timestamp Field",
+        display: "text",
+        default: "",
+        placeholder: "e.g. events.period_end",
+        section: "Field Mapping",
+        order: 4,
+      },
+      band_category_field: {
+        type: "string",
+        label: "Plot Band — Category Field (drives color)",
+        display: "text",
+        default: "",
+        placeholder: "e.g. events.event_type",
+        section: "Field Mapping",
+        order: 5,
+      },
+
+      // ---- Trace style ----
+      trace_type: {
+        type: "string",
+        label: "Trace Type",
+        display: "select",
+        values: [
+          { Lines: "lines" },
+          { "Scatter (WebGL)": "markers" },
+          { "Lines + Points": "lines+markers" },
+        ],
+        default: "lines",
+        section: "Trace Style",
+        order: 6,
+      },
+      line_width: {
+        type: "number",
+        label: "Line Width",
+        display: "range",
+        min: 1,
+        max: 8,
+        step: 0.5,
+        default: 2,
+        section: "Trace Style",
+        order: 7,
+      },
+      point_size: {
+        type: "number",
+        label: "Point Size (scatter / lines+points)",
+        display: "range",
+        min: 2,
+        max: 14,
+        step: 1,
+        default: 4,
+        section: "Trace Style",
+        order: 8,
+      },
+      line_opacity: {
+        type: "number",
+        label: "Trace Opacity",
+        display: "range",
+        min: 0.2,
+        max: 1.0,
+        step: 0.05,
+        default: 1.0,
+        section: "Trace Style",
+        order: 9,
+      },
+
+      // ---- Band style ----
+      band_opacity: {
+        type: "number",
+        label: "Band Fill Opacity",
+        display: "range",
+        min: 0.05,
+        max: 0.6,
+        step: 0.05,
+        default: 0.18,
+        section: "Band Style",
+        order: 10,
+      },
+      band_border: {
+        type: "boolean",
+        label: "Show Band Border Lines",
+        default: false,
+        section: "Band Style",
+        order: 11,
+      },
+
+      // ---- Axes & legend ----
+      use_dual_axis: {
+        type: "boolean",
+        label: "Dual Y Axis (first measure = left, rest = right)",
+        default: false,
+        section: "Axes & Legend",
+        order: 12,
+      },
+      y_axis_label: {
+        type: "string",
+        label: "Left Y Axis Label (overrides auto)",
+        display: "text",
+        default: "",
+        section: "Axes & Legend",
+        order: 13,
+      },
+      y2_axis_label: {
+        type: "string",
+        label: "Right Y Axis Label (dual axis only)",
+        display: "text",
+        default: "",
+        section: "Axes & Legend",
+        order: 14,
+      },
+      show_legend: {
+        type: "boolean",
+        label: "Show Legend",
+        default: true,
+        section: "Axes & Legend",
+        order: 15,
+      },
+    },
+
+    create: function (element) {
+      this._container = document.createElement("div");
+      this._container.style.cssText = "width:100%;height:100%;min-height:200px;";
+      element.style.overflow = "hidden";
+      element.appendChild(this._container);
+    },
+
+    updateAsync: function (data, element, config, queryResponse, details, done) {
+      var self = this;
+
+      loadPlotly(function () {
+        try {
+          var dims    = queryResponse.fields.dimensions || [];
+          var meas    = queryResponse.fields.measures   || [];
+          var allF    = dims.concat(meas);
+
+          if (allF.length < 1) {
+            self._err(element, "Add at least one field to use this visualization.");
+            done(); return;
+          }
+
+          // ----------------------------------------------------------------
+          // Resolve fields from config
+          // ----------------------------------------------------------------
+          var xField = (config.x_field || "").trim() ||
+            (dims.length ? dims[0].name : allF[0].name);
+
+          var measNames = parseList(config.measure_fields);
+          if (!measNames.length) {
+            measNames = meas.map(function (f) { return f.name; });
+          }
+
+          var bandStart = (config.band_start_field  || "").trim() || null;
+          var bandEnd   = (config.band_end_field    || "").trim() || null;
+          var bandCat   = (config.band_category_field || "").trim() || null;
+          var hasBands  = !!(bandStart && bandEnd && bandCat);
+
+          var traceType  = config.trace_type  || "lines";
+          var useWebGL   = traceType === "markers";
+          var dualAxis   = !!(config.use_dual_axis && measNames.length > 1);
+          var lineWidth  = config.line_width  != null ? config.line_width  : 2;
+          var pointSize  = config.point_size  != null ? config.point_size  : 4;
+          var lineOp     = config.line_opacity != null ? config.line_opacity : 1.0;
+          var bandOp     = config.band_opacity != null ? config.band_opacity : 0.18;
+          var showBorder = !!config.band_border;
+
+          // ----------------------------------------------------------------
+          // Build time-series arrays
+          // ----------------------------------------------------------------
+          var xArr  = [];
+          var yArrs = {};
+          measNames.forEach(function (n) { yArrs[n] = []; });
+
+          data.forEach(function (row) {
+            var xv = safeVal(row, xField);
+            if (xv === null) return;
+            xArr.push(xv);
+            measNames.forEach(function (n) {
+              yArrs[n].push(safeVal(row, n));
+            });
+          });
+
+          if (!xArr.length) {
+            self._err(element, "No plottable data — confirm the X field contains values.");
+            done(); return;
+          }
+
+          // ----------------------------------------------------------------
+          // Build measure traces
+          // ----------------------------------------------------------------
+          var traces = [];
+
+          measNames.forEach(function (name, idx) {
+            var meta  = allF.find(function (f) { return f.name === name; });
+            var label = meta ? fieldLabel(meta) : name;
+            var color = LINE_PALETTE[idx % LINE_PALETTE.length];
+            var onY2  = dualAxis && idx > 0;
+
+            var trace = {
+              type: useWebGL ? "scattergl" : "scatter",
+              mode: traceType,
+              name: label,
+              x: xArr,
+              y: yArrs[name],
+              opacity: lineOp,
+              yaxis: onY2 ? "y2" : "y",
+              hovertemplate: "<b>" + label + "</b>: %{y}<br>%{x}<extra></extra>",
+            };
+
+            if (traceType !== "markers") {
+              trace.line = { color: color, width: lineWidth };
+            }
+            if (traceType !== "lines") {
+              trace.marker = { color: color, size: pointSize };
+            }
+
+            traces.push(trace);
+          });
+
+          // ----------------------------------------------------------------
+          // Build plot band shapes + legend dummy traces
+          // ----------------------------------------------------------------
+          var shapes = [];
+
+          if (hasBands) {
+            var bands    = extractBands(data, bandStart, bandEnd, bandCat);
+            var cats     = bands.map(function (b) { return b.category; });
+            var colorMap = buildColorMap(cats);
+
+            bands.forEach(function (band) {
+              var rgba = colorMap[band.category];
+              shapes.push({
+                type:      "rect",
+                xref:      "x",
+                yref:      "paper",
+                x0:        band.start,
+                x1:        band.end,
+                y0:        0,
+                y1:        1,
+                fillcolor: rgba + bandOp + ")",
+                line: {
+                  width: showBorder ? 1 : 0,
+                  color: showBorder ? rgba + "0.6)" : "transparent",
+                },
+                layer: "below",
+              });
+            });
+
+            // Invisible scatter traces so band categories appear in the legend
+            Object.keys(colorMap).forEach(function (cat) {
+              var rgba = colorMap[cat];
+              traces.push({
+                type: "scatter",
+                mode: "markers",
+                name: cat,
+                x: [null],
+                y: [null],
+                marker: { color: rgba + "0.75)", size: 12, symbol: "square" },
+                showlegend: true,
+                hoverinfo: "skip",
+              });
+            });
+          }
+
+          // ----------------------------------------------------------------
+          // Layout
+          // ----------------------------------------------------------------
+          var xMeta = allF.find(function (f) { return f.name === xField; });
+
+          // Auto Y-axis label: use measure name if exactly one measure
+          var autoYLabel = "";
+          if (measNames.length === 1) {
+            var ym = allF.find(function (f) { return f.name === measNames[0]; });
+            if (ym) autoYLabel = fieldLabel(ym);
+          }
+
+          var layout = {
+            margin: {
+              t: 24,
+              r: dualAxis ? 80 : 32,
+              b: config.show_legend !== false ? 72 : 48,
+              l: 64,
+            },
+            paper_bgcolor: "rgba(0,0,0,0)",
+            plot_bgcolor:  "rgba(0,0,0,0)",
+            shapes: shapes,
+            showlegend: config.show_legend !== false,
+            legend: {
+              orientation: "h",
+              x: 0,
+              y: -0.18,
+              font: { size: 11 },
+              traceorder: "normal",
+            },
+            xaxis: {
+              title: {
+                text: xMeta ? fieldLabel(xMeta) : xField,
+                font: { size: 12 },
+              },
+              type: "date",
+              gridcolor: "#e5e7eb",
+              linecolor: "#d1d5db",
+              automargin: true,
+            },
+            yaxis: {
+              title: {
+                text: (config.y_axis_label || "").trim() || autoYLabel,
+                font: { size: 12 },
+              },
+              gridcolor: "#e5e7eb",
+              linecolor: "#d1d5db",
+              zerolinecolor: "#d1d5db",
+              automargin: true,
+            },
+            hoverlabel: {
+              bgcolor: "#1f2937",
+              font: { color: "#f9fafb", size: 12 },
+              bordercolor: "#374151",
+            },
+            hovermode: "x unified",
+          };
+
+          if (dualAxis) {
+            layout.yaxis2 = {
+              title: {
+                text: (config.y2_axis_label || "").trim(),
+                font: { size: 12 },
+              },
+              overlaying: "y",
+              side: "right",
+              gridcolor: "transparent",
+              linecolor: "#d1d5db",
+              automargin: true,
+            };
+          }
+
+          var plotCfg = {
+            responsive: true,
+            displayModeBar: true,
+            modeBarButtonsToRemove: ["sendDataToCloud", "lasso2d", "select2d"],
+            displaylogo: false,
+            toImageButtonOptions: { format: "png", scale: 2 },
+          };
+
+          Plotly.react(self._container, traces, layout, plotCfg);
+
+        } catch (err) {
+          self._err(element, "Visualization error: " + err.message);
+          console.error("[plotly_timeseries_bands]", err);
+        }
+
+        done();
+      });
+    },
+
+    _err: function (element, msg) {
+      var d = document.createElement("div");
+      d.style.cssText =
+        "padding:16px;color:#b91c1c;font-size:13px;font-family:sans-serif;";
+      d.textContent = "⚠ " + msg;
+      element.appendChild(d);
+    },
+  });
+})();
