@@ -279,7 +279,7 @@
         },
         band_opacity: {
           type: "number", label: "Band Fill Opacity", display: "range",
-          min: 0.05, max: 0.9, step: 0.05, default: 0.4, section: "Band Style", order: 7,
+          min: 0.05, max: 0.9, step: 0.05, default: 0.55, section: "Band Style", order: 7,
         },
         band_border: {
           type: "boolean", label: "Show Band Border Lines",
