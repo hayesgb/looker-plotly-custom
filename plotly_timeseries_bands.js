@@ -127,8 +127,9 @@
     }
 
     // hovertemplate: measure value + one line per active group
+    // Plain text only — inline styles can be stripped by Looker's iframe sandbox
     var bandLines = activeGrps.map(function (g, i) {
-      return "<span style='color:#9ca3af'>" + g.label + ":</span> <b>%{customdata[" + i + "]}</b>";
+      return g.label + ": %{customdata[" + i + "]}";
     }).join("<br>");
 
     var template = "<b>" + label + "</b>: %{y}" +
