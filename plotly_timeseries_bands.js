@@ -372,12 +372,13 @@
       element.style.overflow = "hidden";
 
       // Persistent state
-      this._activeGroups    = {};
-      this._activeCats      = {};
-      this._allBandShapes   = {};
-      this._bandColorMaps   = {};
-      this._bandCatTraceIdx = {};
-      this._groupSetKey     = null;
+      this._activeGroups      = {};
+      this._activeCats        = {};
+      this._allBandShapes     = {};
+      this._bandColorMaps     = {};
+      this._bandCatTraceIdx   = {};
+      this._groupSetKey       = null;
+      this._stickyAnnotations = [];   // pinned click annotations
 
       // Cached inputs for rerender (hover rebuild needs these)
       this._renderCache     = null;
@@ -567,6 +568,7 @@
             margin: { t: 16, r: marginR, b: marginB, l: 64 },
             paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
             shapes: allShapes,
+            annotations: self._stickyAnnotations || [],
             showlegend: showLegend,
             legend: legendCfg,
             xaxis: {
@@ -624,6 +626,7 @@
           });
 
           self._attachLegendHandlers(groups);
+          self._attachClickHandlers();
 
         } catch (err) {
           self._err(element, "Visualization error: " + err.message);
@@ -694,7 +697,7 @@
       });
 
       Plotly.react(self._chartDiv, traces,
-        Object.assign({}, cache.layout, { shapes: allShapes }), {
+        Object.assign({}, cache.layout, { shapes: allShapes, annotations: self._stickyAnnotations || [] }), {
           responsive: true, displayModeBar: true,
           modeBarButtonsToRemove: ["sendDataToCloud", "lasso2d", "select2d"],
           displaylogo: false,
@@ -702,6 +705,7 @@
       );
 
       self._attachLegendHandlers(groups);
+      self._attachClickHandlers();
     },
 
     // -------------------------------------------------------------------------
@@ -760,6 +764,82 @@
         realCats.forEach(function (c) { catState[c] = alreadySolo ? true : (c === name); });
         self._rerender();
         return false;
+      });
+    },
+
+    // -------------------------------------------------------------------------
+    // _attachClickHandlers — sticky pinned annotations on point click
+    //
+    // Click a data point  → pin a tooltip annotation at that point
+    // Click the annotation → dismiss it
+    // Each click on a new point replaces the existing annotation (single pin)
+    // -------------------------------------------------------------------------
+    _attachClickHandlers: function () {
+      var self = this;
+
+      if (typeof self._chartDiv.removeAllListeners === "function") {
+        self._chartDiv.removeAllListeners("plotly_click");
+        self._chartDiv.removeAllListeners("plotly_clickannotation");
+      }
+
+      self._chartDiv.on("plotly_click", function (eventData) {
+        if (!eventData || !eventData.points || !eventData.points.length) return;
+
+        var pt    = eventData.points[0];
+        var cache = self._renderCache;
+
+        // Skip band dummy traces (null x/y)
+        if (pt.x === null || pt.y === null || !cache) return;
+
+        var fsHover = cache.fsHover || 12;
+        var ptIdx   = pt.pointIndex;
+        var groups  = cache.groups || [];
+
+        // Format timestamp
+        var xLabel = typeof pt.x === "string" ? pt.x : new Date(pt.x).toLocaleString();
+
+        // Build annotation text lines
+        var lines = [
+          "<b>" + xLabel + "</b>",
+          pt.data.name + ": <b>" + (pt.y !== null ? pt.y : "—") + "</b>",
+        ];
+
+        // Add active band group category values at this point's row index
+        groups.forEach(function (g) {
+          if (self._activeGroups[g.idx] === false) return;
+          var vals = (cache.bandGroupValues || {})[g.idx] || [];
+          var cat  = vals[ptIdx];
+          lines.push(g.label + ": <b>" + (cat !== null && cat !== undefined ? cat : "—") + "</b>");
+        });
+
+        var annotation = {
+          x: pt.x,
+          y: pt.y,
+          xref: "x",
+          yref: (pt.data.yaxis === "y2") ? "y2" : "y",
+          text: lines.join("<br>"),
+          showarrow: true,
+          arrowhead: 2,
+          arrowsize: 0.8,
+          arrowwidth: 1.5,
+          arrowcolor: "#6366f1",
+          bgcolor: "#1f2937",
+          font: { color: "#f9fafb", size: fsHover },
+          bordercolor: "#4f46e5",
+          borderwidth: 1,
+          borderpad: 8,
+          captureevents: true,   // enables plotly_clickannotation to fire
+          clicktoshow: false,
+        };
+
+        self._stickyAnnotations = [annotation];
+        Plotly.relayout(self._chartDiv, { annotations: self._stickyAnnotations });
+      });
+
+      // Click the annotation itself to dismiss it
+      self._chartDiv.on("plotly_clickannotation", function () {
+        self._stickyAnnotations = [];
+        Plotly.relayout(self._chartDiv, { annotations: [] });
       });
     },
 
