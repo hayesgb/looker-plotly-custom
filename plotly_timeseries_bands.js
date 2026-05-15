@@ -63,10 +63,37 @@
     return str.split(",").map(function (s) { return s.trim(); }).filter(Boolean);
   }
 
-  function buildColorMap(categories, palette) {
+  // Convert a 6-digit hex color to an rgba base string (opacity appended later)
+  function hexToRgbaBase(hex) {
+    var clean = (hex || "").replace("#", "");
+    if (clean.length === 3) clean = clean[0]+clean[0]+clean[1]+clean[1]+clean[2]+clean[2];
+    var r = parseInt(clean.slice(0,2),16), g = parseInt(clean.slice(2,4),16), b = parseInt(clean.slice(4,6),16);
+    if (isNaN(r)||isNaN(g)||isNaN(b)) return null;
+    return "rgba("+r+","+g+","+b+",";
+  }
+
+  // Parse a JSON color override string: {"Category": "#hexcolor", ...}
+  // Returns {} silently on any failure — bad JSON won't break the viz
+  function parseColorOverrides(jsonStr) {
+    if (!jsonStr || !jsonStr.trim()) return {};
+    try {
+      var parsed = JSON.parse(jsonStr);
+      if (typeof parsed !== "object" || Array.isArray(parsed)) return {};
+      var result = {};
+      Object.keys(parsed).forEach(function (cat) {
+        var rgba = hexToRgbaBase(String(parsed[cat]));
+        if (rgba) result[cat] = rgba;
+      });
+      return result;
+    } catch (e) { return {}; }
+  }
+
+  function buildColorMap(categories, palette, overrides) {
+    overrides = overrides || {};
     var map = {}, idx = 0;
     categories.forEach(function (c) {
-      if (!map.hasOwnProperty(c)) map[c] = palette[idx++ % palette.length];
+      if (!map.hasOwnProperty(c))
+        map[c] = overrides.hasOwnProperty(c) ? overrides[c] : palette[idx++ % palette.length];
     });
     return map;
   }
@@ -283,6 +310,12 @@
           default: "", placeholder: "view.field_end", section: sec, order: ord + 2 };
         opts[b + "cat"]   = { type: "string", label: "Category Field", display: "text",
           default: "", placeholder: "view.field_category", section: sec, order: ord + 3 };
+        opts[b + "colors"] = {
+          type: "string", label: "Color Overrides (JSON)",
+          display: "text", default: "",
+          placeholder: '{"Cooling":"#14b8a6","Heating":"#ef4444"}',
+          section: sec, order: ord + 4,
+        };
       }
       return opts;
     }()),
@@ -341,7 +374,8 @@
             var start = (config[b + "start"] || "").trim();
             var end   = (config[b + "end"]   || "").trim();
             var cat   = (config[b + "cat"]   || "").trim();
-            if (label && start && end && cat) groups.push({ idx: i - 1, label: label, startField: start, endField: end, catField: cat });
+            var colorJson = (config[b + "colors"] || "").trim();
+            if (label && start && end && cat) groups.push({ idx: i - 1, label: label, startField: start, endField: end, catField: cat, colorOverrides: parseColorOverrides(colorJson) });
           }
 
           // Reset active-group state only when configured groups change
@@ -420,7 +454,7 @@
             var palette  = GROUP_PALETTES[g.idx % GROUP_PALETTES.length];
             var bands    = extractBands(data, g.startField, g.endField, g.catField);
             var cats     = bands.map(function (b) { return b.category; });
-            var colorMap = buildColorMap(cats, palette);
+            var colorMap = buildColorMap(cats, palette, g.colorOverrides);
 
             self._bandColorMaps[g.idx] = colorMap;
 
