@@ -250,56 +250,56 @@
       var opts = {
         x_field: {
           type: "string", label: "X (Time) Field", display: "text", default: "",
-          placeholder: "e.g. readings.timestamp", section: "Field Mapping", order: 1,
+          placeholder: "e.g. readings.timestamp", section: "Chart Options", order: 1,
         },
         measure_fields: {
           type: "string", label: "Measure Fields (comma-separated; blank = all)",
-          display: "text", default: "", section: "Field Mapping", order: 2,
+          display: "text", default: "", section: "Chart Options", order: 2,
         },
         trace_type: {
           type: "string", label: "Trace Type", display: "select",
           values: [{ Lines: "lines" }, { "Scatter (WebGL)": "markers" }, { "Lines + Points": "lines+markers" }],
-          default: "lines", section: "Trace Style", order: 3,
+          default: "lines", section: "Chart Options", order: 3,
         },
         line_width: {
           type: "number", label: "Line Width", display: "range",
-          min: 1, max: 8, step: 0.5, default: 2, section: "Trace Style", order: 4,
+          min: 1, max: 8, step: 0.5, default: 2, section: "Chart Options", order: 4,
         },
         point_size: {
           type: "number", label: "Point Size", display: "range",
-          min: 2, max: 14, step: 1, default: 4, section: "Trace Style", order: 5,
+          min: 2, max: 14, step: 1, default: 4, section: "Chart Options", order: 5,
         },
         line_opacity: {
           type: "number", label: "Trace Opacity", display: "range",
-          min: 0.2, max: 1.0, step: 0.05, default: 1.0, section: "Trace Style", order: 6,
+          min: 0.2, max: 1.0, step: 0.05, default: 1.0, section: "Chart Options", order: 6,
         },
         connect_gaps: {
           type: "boolean", label: "Connect Nulls (draw line through missing values)",
-          default: false, section: "Trace Style", order: 7,
+          default: false, section: "Chart Options", order: 7,
         },
         band_opacity: {
           type: "number", label: "Band Fill Opacity", display: "range",
-          min: 0.05, max: 0.9, step: 0.05, default: 0.55, section: "Band Style", order: 7,
+          min: 0.05, max: 0.9, step: 0.05, default: 0.55, section: "Chart Options", order: 7,
         },
         band_border: {
           type: "boolean", label: "Show Band Border Lines",
-          default: false, section: "Band Style", order: 8,
+          default: false, section: "Chart Options", order: 8,
         },
         use_dual_axis: {
           type: "boolean", label: "Dual Y Axis (first measure left, rest right)",
-          default: false, section: "Axes & Legend", order: 9,
+          default: false, section: "Chart Options", order: 9,
         },
         y_axis_label: {
           type: "string", label: "Left Y Axis Label", display: "text", default: "",
-          section: "Axes & Legend", order: 10,
+          section: "Chart Options", order: 10,
         },
         y2_axis_label: {
           type: "string", label: "Right Y Axis Label (dual axis)", display: "text", default: "",
-          section: "Axes & Legend", order: 11,
+          section: "Chart Options", order: 11,
         },
         show_legend: {
           type: "boolean", label: "Show Legend", default: true,
-          section: "Axes & Legend", order: 12,
+          section: "Chart Options", order: 12,
         },
       };
 
