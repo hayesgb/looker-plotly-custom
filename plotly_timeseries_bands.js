@@ -273,6 +273,10 @@
           type: "number", label: "Trace Opacity", display: "range",
           min: 0.2, max: 1.0, step: 0.05, default: 1.0, section: "Trace Style", order: 6,
         },
+        connect_gaps: {
+          type: "boolean", label: "Connect Nulls (draw line through missing values)",
+          default: false, section: "Trace Style", order: 7,
+        },
         band_opacity: {
           type: "number", label: "Band Fill Opacity", display: "range",
           min: 0.05, max: 0.5, step: 0.05, default: 0.18, section: "Band Style", order: 7,
@@ -386,14 +390,15 @@
             self._groupSetKey = newGroupKey;
           }
 
-          var traceType  = config.trace_type  || "lines";
-          var useWebGL   = traceType === "markers";
-          var dualAxis   = !!(config.use_dual_axis && measNames.length > 1);
-          var lineWidth  = config.line_width   != null ? config.line_width   : 2;
-          var pointSize  = config.point_size   != null ? config.point_size   : 4;
-          var lineOp     = config.line_opacity != null ? config.line_opacity : 1.0;
-          var bandOp     = config.band_opacity != null ? config.band_opacity : 0.18;
-          var showBorder = !!config.band_border;
+          var traceType   = config.trace_type  || "lines";
+          var useWebGL    = traceType === "markers";
+          var dualAxis    = !!(config.use_dual_axis && measNames.length > 1);
+          var lineWidth   = config.line_width   != null ? config.line_width   : 2;
+          var pointSize   = config.point_size   != null ? config.point_size   : 4;
+          var lineOp      = config.line_opacity != null ? config.line_opacity : 1.0;
+          var connectGaps = !!config.connect_gaps;
+          var bandOp      = config.band_opacity != null ? config.band_opacity : 0.18;
+          var showBorder  = !!config.band_border;
 
           // ---- Build time-series + band category arrays in a single pass ----
           var xArr            = [];
@@ -433,6 +438,7 @@
               mode: traceType, name: label,
               x: xArr, y: yArrs[name],
               opacity: lineOp,
+              connectgaps: connectGaps,
               yaxis: (dualAxis && idx > 0) ? "y2" : "y",
               customdata: hover.customdata,
               hovertemplate: hover.hovertemplate,
@@ -537,7 +543,7 @@
             bandGroupValues: bandGroupValues,
             layout: layout,
             traceType: traceType, useWebGL: useWebGL,
-            lineWidth: lineWidth, pointSize: pointSize, lineOp: lineOp,
+            lineWidth: lineWidth, pointSize: pointSize, lineOp: lineOp, connectGaps: connectGaps,
           };
 
           Plotly.react(self._chartDiv, traces, layout, {
@@ -582,6 +588,7 @@
           mode: cache.traceType, name: p.label,
           x: xArr, y: p.yArr,
           opacity: cache.lineOp,
+          connectgaps: cache.connectGaps,
           yaxis: p.onY2 ? "y2" : "y",
           customdata: hover.customdata,
           hovertemplate: hover.hovertemplate,
