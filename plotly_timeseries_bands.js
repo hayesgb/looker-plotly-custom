@@ -34,10 +34,30 @@
     ["rgba(100,116,139,", "rgba(148,163,184,",  "rgba(71,85,105,",   "rgba(203,213,225,",  "rgba(51,65,85,"],
   ];
 
+  // Looker's standard 13-color series palette
   var LINE_PALETTE = [
-    "#6366f1", "#f97316", "#14b8a6", "#f43f5e",
-    "#eab308", "#a855f7", "#22c55e", "#0ea5e9", "#ec4899", "#84cc16",
+    "#3EB0D5", "#B1399E", "#C2DD67", "#592EC2",
+    "#F98131", "#67DB5E", "#78A2E5", "#FF8DA1",
+    "#FFD95F", "#0096A9", "#7B7B7B", "#5CA56B", "#C3A4E1",
   ];
+
+  // Theme presets — Light matches Looker's default dashboard style
+  var THEMES = {
+    light: {
+      paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+      gridcolor: "#e5e7eb", linecolor: "#d1d5db", zerolinecolor: "#d1d5db",
+      fontcolor: "#3d404a", arrowcolor: "#3EB0D5",
+      annotationBg: "#1f2937", annotationFont: "#f9fafb", annotationBorder: "#3EB0D5",
+    },
+    dark: {
+      paper_bgcolor: "#1f2937", plot_bgcolor: "#111827",
+      gridcolor: "#374151", linecolor: "#4b5563", zerolinecolor: "#4b5563",
+      fontcolor: "#f3f4f6", arrowcolor: "#3EB0D5",
+      annotationBg: "#374151", annotationFont: "#f9fafb", annotationBorder: "#3EB0D5",
+    },
+  };
+
+  var LOOKER_FONT = "Google Sans, Roboto, -apple-system, BlinkMacSystemFont, sans-serif";
 
   // ---------------------------------------------------------------------------
   // Helpers
@@ -305,6 +325,11 @@
           type: "boolean", label: "Show Legend", default: true,
           section: "Chart Options", order: 12,
         },
+        chart_theme: {
+          type: "string", label: "Chart Theme", display: "select",
+          values: [{ "Light (Looker default)": "light" }, { "Dark": "dark" }],
+          default: "light", section: "Chart Options", order: 13,
+        },
         legend_position: {
           type: "string", label: "Legend Position", display: "select",
           values: [
@@ -534,6 +559,7 @@
 
           var legendPos   = config.legend_position || "right";
           var showLegend  = config.show_legend !== false;
+          var theme       = THEMES[config.chart_theme] || THEMES.light;
           var fsAxisTitle = config.font_size_axis_title != null ? config.font_size_axis_title : 12;
           var fsTicks     = config.font_size_ticks      != null ? config.font_size_ticks      : 11;
           var fsLegend    = config.font_size_legend     != null ? config.font_size_legend     : 11;
@@ -566,31 +592,33 @@
 
           var layout = {
             margin: { t: 16, r: marginR, b: marginB, l: 64 },
-            paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+            paper_bgcolor: theme.paper_bgcolor,
+            plot_bgcolor:  theme.plot_bgcolor,
+            font: { family: LOOKER_FONT, color: theme.fontcolor },
             shapes: allShapes,
             annotations: self._stickyAnnotations || [],
             showlegend: showLegend,
             legend: legendCfg,
             xaxis: {
-              title: { text: (config.x_axis_label || "").trim() || (xMeta ? fieldLabel(xMeta) : xField), font: { size: fsAxisTitle } },
-              tickfont: { size: fsTicks },
-              type: "date", gridcolor: "#e5e7eb", linecolor: "#d1d5db", automargin: true,
+              title: { text: (config.x_axis_label || "").trim() || (xMeta ? fieldLabel(xMeta) : xField), font: { size: fsAxisTitle, family: LOOKER_FONT } },
+              tickfont: { size: fsTicks, family: LOOKER_FONT, color: theme.fontcolor },
+              type: "date", gridcolor: theme.gridcolor, linecolor: theme.linecolor, automargin: true,
             },
             yaxis: {
-              title: { text: (config.y_axis_label || "").trim() || autoYLabel, font: { size: fsAxisTitle } },
-              tickfont: { size: fsTicks },
-              gridcolor: "#e5e7eb", linecolor: "#d1d5db", zerolinecolor: "#d1d5db", automargin: true,
+              title: { text: (config.y_axis_label || "").trim() || autoYLabel, font: { size: fsAxisTitle, family: LOOKER_FONT } },
+              tickfont: { size: fsTicks, family: LOOKER_FONT, color: theme.fontcolor },
+              gridcolor: theme.gridcolor, linecolor: theme.linecolor, zerolinecolor: theme.zerolinecolor, automargin: true,
             },
-            hoverlabel: { bgcolor: "#1f2937", font: { color: "#f9fafb", size: fsHover }, bordercolor: "#374151" },
+            hoverlabel: { bgcolor: theme.annotationBg, font: { color: theme.annotationFont, size: fsHover, family: LOOKER_FONT }, bordercolor: theme.linecolor },
             hovermode: "x unified",
           };
 
           if (dualAxis) {
             layout.yaxis2 = {
-              title: { text: (config.y2_axis_label || "").trim(), font: { size: fsAxisTitle } },
-              tickfont: { size: fsTicks },
+              title: { text: (config.y2_axis_label || "").trim(), font: { size: fsAxisTitle, family: LOOKER_FONT } },
+              tickfont: { size: fsTicks, family: LOOKER_FONT, color: theme.fontcolor },
               overlaying: "y", side: "right", gridcolor: "transparent",
-              linecolor: "#d1d5db", automargin: true,
+              linecolor: theme.linecolor, automargin: true,
             };
           }
 
@@ -612,6 +640,7 @@
             lineWidth: lineWidth, pointSize: pointSize, lineOp: lineOp, connectGaps: connectGaps,
             legendPos: legendPos, showLegend: showLegend,
             fsAxisTitle: fsAxisTitle, fsTicks: fsTicks, fsLegend: fsLegend, fsHover: fsHover,
+            theme: theme,
           };
 
           Plotly.react(self._chartDiv, traces, layout, {
@@ -812,6 +841,7 @@
           lines.push(g.label + ": <b>" + (cat !== null && cat !== undefined ? cat : "—") + "</b>");
         });
 
+        var th = (cache.theme) || THEMES.light;
         var annotation = {
           x: pt.x,
           y: pt.y,
@@ -822,13 +852,13 @@
           arrowhead: 2,
           arrowsize: 0.8,
           arrowwidth: 1.5,
-          arrowcolor: "#6366f1",
-          bgcolor: "#1f2937",
-          font: { color: "#f9fafb", size: fsHover },
-          bordercolor: "#4f46e5",
+          arrowcolor: th.arrowcolor,
+          bgcolor: th.annotationBg,
+          font: { color: th.annotationFont, size: fsHover, family: LOOKER_FONT },
+          bordercolor: th.annotationBorder,
           borderwidth: 1,
           borderpad: 8,
-          captureevents: true,   // enables plotly_clickannotation to fire
+          captureevents: true,
           clicktoshow: false,
         };
 
