@@ -679,29 +679,53 @@
     // -------------------------------------------------------------------------
     _attachLegendHandlers: function (groups) {
       var self = this;
-      self._chartDiv.removeAllListeners("plotly_legendclick");
-      self._chartDiv.removeAllListeners("plotly_legenddoubleclick");
+
+      // Guard: removeAllListeners may not exist before first Plotly render
+      if (typeof self._chartDiv.removeAllListeners === "function") {
+        self._chartDiv.removeAllListeners("plotly_legendclick");
+        self._chartDiv.removeAllListeners("plotly_legenddoubleclick");
+      }
+
+      // No band groups configured — nothing to intercept, let Plotly handle all clicks
+      if (!groups || !groups.length) return;
 
       self._chartDiv.on("plotly_legendclick", function (eventData) {
-        var lg = (eventData.trace.legendgroup || "");
+        // Plotly 3.x: use data[curveNumber]; v2 fallback: eventData.trace
+        var trace = (eventData.data && eventData.curveNumber != null)
+          ? eventData.data[eventData.curveNumber]
+          : eventData.trace;
+        if (!trace) return; // unknown structure — allow default
+
+        var lg   = trace.legendgroup || "";
+        var name = trace.name;
+
+        // Not a band category — allow Plotly's default toggle
         if (!lg.startsWith("bg_")) return;
+
         var groupIdx = parseInt(lg.replace("bg_", ""), 10);
         var catState = self._activeCats[groupIdx];
-        var name     = eventData.trace.name;
         if (!catState || !catState.hasOwnProperty(name)) return;
+
         catState[name] = !catState[name];
         self._rerender();
-        return false;
+        return false; // suppress default toggle for band traces only
       });
 
       self._chartDiv.on("plotly_legenddoubleclick", function (eventData) {
-        var lg = (eventData.trace.legendgroup || "");
+        var trace = (eventData.data && eventData.curveNumber != null)
+          ? eventData.data[eventData.curveNumber]
+          : eventData.trace;
+        if (!trace) return;
+
+        var lg   = trace.legendgroup || "";
+        var name = trace.name;
         if (!lg.startsWith("bg_")) return;
-        var groupIdx  = parseInt(lg.replace("bg_", ""), 10);
-        var catState  = self._activeCats[groupIdx];
-        var name      = eventData.trace.name;
+
+        var groupIdx    = parseInt(lg.replace("bg_", ""), 10);
+        var catState    = self._activeCats[groupIdx];
         if (!catState) return;
-        var realCats  = Object.keys(catState).filter(function (k) { return k !== "__key"; });
+
+        var realCats    = Object.keys(catState).filter(function (k) { return k !== "__key"; });
         var alreadySolo = realCats.every(function (c) {
           return c === name ? catState[c] !== false : catState[c] === false;
         });
