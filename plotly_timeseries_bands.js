@@ -301,6 +301,15 @@
           type: "boolean", label: "Show Legend", default: true,
           section: "Chart Options", order: 12,
         },
+        legend_position: {
+          type: "string", label: "Legend Position", display: "select",
+          values: [
+            { "Bottom (horizontal)": "bottom" },
+            { "Right (vertical)":    "right"  },
+            { "Inside top-right":    "inside" },
+          ],
+          default: "right", section: "Chart Options", order: 13,
+        },
       };
 
       var defaultLabels = ["Battery Schedule", "ODU Status", "Group 3", "Group 4", "Group 5"];
@@ -502,12 +511,40 @@
             if (ym) autoYLabel = fieldLabel(ym);
           }
 
+          var legendPos  = config.legend_position || "right";
+          var showLegend = config.show_legend !== false;
+
+          // Legend config and margin vary by position
+          var legendCfg, marginB, marginR;
+          if (legendPos === "bottom") {
+            legendCfg = { orientation: "h", x: 0, y: -0.15,
+                          xanchor: "left", yanchor: "top",
+                          font: { size: 11 }, traceorder: "grouped" };
+            marginB = showLegend ? 80 : 32;
+            marginR = dualAxis ? 80 : 32;
+          } else if (legendPos === "inside") {
+            legendCfg = { orientation: "v", x: 1, y: 1,
+                          xanchor: "right", yanchor: "top",
+                          bgcolor: "rgba(255,255,255,0.85)",
+                          bordercolor: "#e5e7eb", borderwidth: 1,
+                          font: { size: 11 }, traceorder: "grouped" };
+            marginB = 32;
+            marginR = dualAxis ? 80 : 32;
+          } else {
+            // right (default) — vertical legend on right side
+            legendCfg = { orientation: "v", x: 1.02, y: 1,
+                          xanchor: "left", yanchor: "top",
+                          font: { size: 11 }, traceorder: "grouped" };
+            marginB = 32;
+            marginR = showLegend ? 160 : (dualAxis ? 80 : 32);
+          }
+
           var layout = {
-            margin: { t: 16, r: dualAxis ? 80 : 32, b: config.show_legend !== false ? 80 : 48, l: 64 },
+            margin: { t: 16, r: marginR, b: marginB, l: 64 },
             paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
             shapes: allShapes,
-            showlegend: config.show_legend !== false,
-            legend: { orientation: "h", x: 0, y: -0.2, font: { size: 11 }, traceorder: "grouped" },
+            showlegend: showLegend,
+            legend: legendCfg,
             xaxis: {
               title: { text: xMeta ? fieldLabel(xMeta) : xField, font: { size: 12 } },
               type: "date", gridcolor: "#e5e7eb", linecolor: "#d1d5db", automargin: true,
@@ -544,6 +581,7 @@
             layout: layout,
             traceType: traceType, useWebGL: useWebGL,
             lineWidth: lineWidth, pointSize: pointSize, lineOp: lineOp, connectGaps: connectGaps,
+            legendPos: legendPos, showLegend: showLegend,
           };
 
           Plotly.react(self._chartDiv, traces, layout, {
