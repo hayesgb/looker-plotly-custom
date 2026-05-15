@@ -21,7 +21,7 @@
   //   - Dual Y axis support
   //
   // IMPORTANT — Plotly dependency (Admin → Visualizations → Dependencies):
-  //   https://cdn.plot.ly/plotly-2.27.0.min.js
+  //   https://cdn.plot.ly/plotly-3.5.1.min.js
   // ---------------------------------------------------------------------------
 
   var MAX_GROUPS = 5;
@@ -47,7 +47,7 @@
     if (window.Plotly) { cb(); return; }
     console.warn("[plotly_timeseries_bands] Add Plotly CDN to Dependencies field.");
     var s = document.createElement("script");
-    s.src = "https://cdn.plot.ly/plotly-2.27.0.min.js";
+    s.src = "https://cdn.plot.ly/plotly-3.5.1.min.js";
     s.onload = cb;
     document.head.appendChild(s);
   }

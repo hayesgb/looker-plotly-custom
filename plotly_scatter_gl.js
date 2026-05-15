@@ -17,7 +17,7 @@
   // Do NOT load Plotly dynamically from within this file (CORS / CSP risk).
   // Instead, register the Plotly CDN URL in the Looker Admin viz Dependencies
   // field so Looker pre-loads it in its own context:
-  //   https://cdn.plot.ly/plotly-2.27.0.min.js
+  //   https://cdn.plot.ly/plotly-3.5.1.min.js
   // ---------------------------------------------------------------------------
 
   function loadPlotly(callback) {
@@ -29,12 +29,12 @@
     }
     console.warn(
       "[plotly_scatter_gl] Plotly not found on window. " +
-      "Add https://cdn.plot.ly/plotly-2.27.0.min.js to the " +
+      "Add https://cdn.plot.ly/plotly-3.5.1.min.js to the " +
       "Dependencies field in Admin → Platform → Visualizations."
     );
     // Attempt dynamic load as last resort (may be blocked by Looker CSP)
     var script = document.createElement("script");
-    script.src = "https://cdn.plot.ly/plotly-2.27.0.min.js";
+    script.src = "https://cdn.plot.ly/plotly-3.5.1.min.js";
     script.onload = callback;
     script.onerror = function () {
       console.error(
