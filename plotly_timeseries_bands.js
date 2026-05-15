@@ -249,12 +249,16 @@
     options: (function () {
       var opts = {
         x_field: {
-          type: "string", label: "X (Time) Field", display: "text", default: "",
-          placeholder: "e.g. readings.timestamp", section: "Chart Options", order: 1,
+          type: "string", label: "X Field (internal: view.field_name)", display: "text", default: "",
+          placeholder: "e.g. edragon_metrics.timestamp_time", section: "Chart Options", order: 1,
+        },
+        x_axis_label: {
+          type: "string", label: "X Axis Display Label (optional override)", display: "text", default: "",
+          placeholder: "e.g. Timestamp", section: "Chart Options", order: 2,
         },
         measure_fields: {
-          type: "string", label: "Measure Fields (comma-separated; blank = all)",
-          display: "text", default: "", section: "Chart Options", order: 2,
+          type: "string", label: "Measure Fields (internal names, comma-separated; blank = all)",
+          display: "text", default: "", section: "Chart Options", order: 3,
         },
         trace_type: {
           type: "string", label: "Trace Type", display: "select",
@@ -566,7 +570,7 @@
             showlegend: showLegend,
             legend: legendCfg,
             xaxis: {
-              title: { text: xMeta ? fieldLabel(xMeta) : xField, font: { size: fsAxisTitle } },
+              title: { text: (config.x_axis_label || "").trim() || (xMeta ? fieldLabel(xMeta) : xField), font: { size: fsAxisTitle } },
               tickfont: { size: fsTicks },
               type: "date", gridcolor: "#e5e7eb", linecolor: "#d1d5db", automargin: true,
             },
