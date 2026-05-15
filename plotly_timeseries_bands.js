@@ -310,6 +310,22 @@
           ],
           default: "right", section: "Chart Options", order: 13,
         },
+        font_size_axis_title: {
+          type: "number", label: "Axis Title Font Size", display: "range",
+          min: 8, max: 24, step: 1, default: 12, section: "Chart Options", order: 14,
+        },
+        font_size_ticks: {
+          type: "number", label: "Tick Label Font Size", display: "range",
+          min: 8, max: 20, step: 1, default: 11, section: "Chart Options", order: 15,
+        },
+        font_size_legend: {
+          type: "number", label: "Legend Font Size", display: "range",
+          min: 8, max: 20, step: 1, default: 11, section: "Chart Options", order: 16,
+        },
+        font_size_hover: {
+          type: "number", label: "Hover Label Font Size", display: "range",
+          min: 8, max: 20, step: 1, default: 12, section: "Chart Options", order: 17,
+        },
       };
 
       var defaultLabels = ["Battery Schedule", "ODU Status", "Group 3", "Group 4", "Group 5"];
@@ -511,15 +527,19 @@
             if (ym) autoYLabel = fieldLabel(ym);
           }
 
-          var legendPos  = config.legend_position || "right";
-          var showLegend = config.show_legend !== false;
+          var legendPos   = config.legend_position || "right";
+          var showLegend  = config.show_legend !== false;
+          var fsAxisTitle = config.font_size_axis_title != null ? config.font_size_axis_title : 12;
+          var fsTicks     = config.font_size_ticks      != null ? config.font_size_ticks      : 11;
+          var fsLegend    = config.font_size_legend     != null ? config.font_size_legend     : 11;
+          var fsHover     = config.font_size_hover      != null ? config.font_size_hover      : 12;
 
           // Legend config and margin vary by position
           var legendCfg, marginB, marginR;
           if (legendPos === "bottom") {
             legendCfg = { orientation: "h", x: 0, y: -0.15,
                           xanchor: "left", yanchor: "top",
-                          font: { size: 11 }, traceorder: "grouped" };
+                          font: { size: fsLegend }, traceorder: "grouped" };
             marginB = showLegend ? 80 : 32;
             marginR = dualAxis ? 80 : 32;
           } else if (legendPos === "inside") {
@@ -527,14 +547,14 @@
                           xanchor: "right", yanchor: "top",
                           bgcolor: "rgba(255,255,255,0.85)",
                           bordercolor: "#e5e7eb", borderwidth: 1,
-                          font: { size: 11 }, traceorder: "grouped" };
+                          font: { size: fsLegend }, traceorder: "grouped" };
             marginB = 32;
             marginR = dualAxis ? 80 : 32;
           } else {
             // right (default) — vertical legend on right side
             legendCfg = { orientation: "v", x: 1.02, y: 1,
                           xanchor: "left", yanchor: "top",
-                          font: { size: 11 }, traceorder: "grouped" };
+                          font: { size: fsLegend }, traceorder: "grouped" };
             marginB = 32;
             marginR = showLegend ? 160 : (dualAxis ? 80 : 32);
           }
@@ -546,20 +566,23 @@
             showlegend: showLegend,
             legend: legendCfg,
             xaxis: {
-              title: { text: xMeta ? fieldLabel(xMeta) : xField, font: { size: 12 } },
+              title: { text: xMeta ? fieldLabel(xMeta) : xField, font: { size: fsAxisTitle } },
+              tickfont: { size: fsTicks },
               type: "date", gridcolor: "#e5e7eb", linecolor: "#d1d5db", automargin: true,
             },
             yaxis: {
-              title: { text: (config.y_axis_label || "").trim() || autoYLabel, font: { size: 12 } },
+              title: { text: (config.y_axis_label || "").trim() || autoYLabel, font: { size: fsAxisTitle } },
+              tickfont: { size: fsTicks },
               gridcolor: "#e5e7eb", linecolor: "#d1d5db", zerolinecolor: "#d1d5db", automargin: true,
             },
-            hoverlabel: { bgcolor: "#1f2937", font: { color: "#f9fafb", size: 12 }, bordercolor: "#374151" },
+            hoverlabel: { bgcolor: "#1f2937", font: { color: "#f9fafb", size: fsHover }, bordercolor: "#374151" },
             hovermode: "x unified",
           };
 
           if (dualAxis) {
             layout.yaxis2 = {
-              title: { text: (config.y2_axis_label || "").trim(), font: { size: 12 } },
+              title: { text: (config.y2_axis_label || "").trim(), font: { size: fsAxisTitle } },
+              tickfont: { size: fsTicks },
               overlaying: "y", side: "right", gridcolor: "transparent",
               linecolor: "#d1d5db", automargin: true,
             };
@@ -582,6 +605,7 @@
             traceType: traceType, useWebGL: useWebGL,
             lineWidth: lineWidth, pointSize: pointSize, lineOp: lineOp, connectGaps: connectGaps,
             legendPos: legendPos, showLegend: showLegend,
+            fsAxisTitle: fsAxisTitle, fsTicks: fsTicks, fsLegend: fsLegend, fsHover: fsHover,
           };
 
           Plotly.react(self._chartDiv, traces, layout, {
